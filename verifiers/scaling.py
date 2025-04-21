@@ -1,5 +1,5 @@
 import torch
-from diffusers import StableZero123Pipeline
+from diffusers import DiffusionPipeline
 from PIL import Image
 import os
 import json
@@ -93,17 +93,8 @@ if __name__ == "__main__":
 
     # --- Load Model & Verifiers ---
     print(f"Loading model: {model_id}")
-    try:
-        pipeline = StableZero123Pipeline.from_pretrained(model_id, torch_dtype=dtype)
-        pipeline.to(device)
-        print("Successfully imported StableZero123Pipeline!")
-    except ImportError as e:
-        print(f"Import failed: {e}")
-        import diffusers
-        print(f"Diffusers location: {diffusers.__file__}")
-        print(f"Diffusers version: {diffusers.__version__}")
-        pipeline = diffusers.StableZero123Pipeline.from_pretrained(model_id, torch_dtype=dtype)
-        pipeline.to(device)
+    pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype)
+    pipeline.to(device)
 
     print("Initializing verifiers...")
     gemini_verifier = GeminiVerifier() # Requires GEMINI_API_KEY in .env
