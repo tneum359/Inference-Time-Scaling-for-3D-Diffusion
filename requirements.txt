@@ -1,0 +1,11 @@
+numpy
+scipy
+torch
+google-generativeai
+typing-extensions
+Pillow
+transformers
+huggingface-hub
+diffusers
+python-dotenv
+requests 
