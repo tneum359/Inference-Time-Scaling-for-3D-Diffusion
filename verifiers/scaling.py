@@ -13,7 +13,7 @@ from io import BytesIO
 import base64
 import typing
 
-from verifiers.gemini_verifier import GeminiVerifier # Added
+from gemini_verifier import GeminiVerifier # Added
 from laion_aesthetics import LAIONAestheticVerifier
 
 # --- Helper Functions (Integrated from utils.py) ---
