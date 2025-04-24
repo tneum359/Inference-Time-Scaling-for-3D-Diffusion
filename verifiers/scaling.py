@@ -15,6 +15,8 @@ import importlib.util
 import pathlib
 from huggingface_hub import snapshot_download
 import re # Added for sanitizing filenames
+import rembg # Added
+from typing import Any # Added
 
 from gemini_verifier import GeminiVerifier # Added
 from laion_aesthetics import LAIONAestheticVerifier
@@ -55,6 +57,30 @@ def get_input_name(path_or_url):
         return name if name else "default_input"
     except Exception:
         return "default_input" # Fallback
+
+# --- Helper function for background removal --- Added
+def remove_background(
+    image: Image.Image,
+    rembg_session: Any = None,
+    force: bool = False,
+    **rembg_kwargs,
+) -> Image.Image:
+    do_remove = True
+    # Skip if image is already transparent
+    if image.mode == "RGBA" and image.getextrema()[3][0] < 255:
+        print("  Input image already has transparency, skipping background removal.")
+        do_remove = False
+    do_remove = do_remove or force
+    if do_remove:
+        try:
+            # Use the session for efficiency
+            image = rembg.remove(image, session=rembg_session, **rembg_kwargs)
+        except Exception as e:
+            print(f"  Error during rembg.remove: {e}")
+            # Optionally re-raise or return original image based on desired handling
+            # raise e # Or return the original image if failure is acceptable
+            return image # Returning original image on failure for now
+    return image
 
 # --- Main Script --- Modified for Batch Processing
 if __name__ == "__main__":
@@ -99,6 +125,16 @@ if __name__ == "__main__":
     gemini_verifier = GeminiVerifier() # Requires GEMINI_API_KEY in .env
     laion_verifier = LAIONAestheticVerifier(dtype=dtype)
 
+    # Initialize rembg Session ONCE outside the loop
+    print("Initializing background removal session...")
+    try:
+        rembg_session = rembg.new_session() # Use default model
+        # You could specify a model like: rembg.new_session(model_name="u2net")
+    except Exception as e:
+        print(f"Error initializing rembg session: {e}")
+        print("Background removal will likely fail.")
+        rembg_session = None # Allow script to continue but removal will fail
+
     # --- Loop Over Input Images --- Added Outer Loop
     for input_image_path_or_url in input_images:
         print(f"\n{'='*20} Processing Input: {input_image_path_or_url} {'='*20}")
@@ -117,11 +153,20 @@ if __name__ == "__main__":
         print(f"Loading input image: {input_image_path_or_url}")
         try:
             input_image = load_image(input_image_path_or_url)
+
+            # <<< Add background removal >>>
+            if rembg_session: # Only attempt if session initialized
+                print("Removing background...")
+                input_image = remove_background(input_image, rembg_session=rembg_session)
+            else:
+                print("Skipping background removal due to session initialization error.")
+            # <<< End background removal >>>
+
             target_size = (256, 256)
             print(f"Resizing input image to {target_size}...")
             input_image = input_image.resize(target_size, Image.Resampling.LANCZOS)
         except Exception as e:
-            print(f"Error loading or resizing input image: {e}. Skipping this input.")
+            print(f"Error loading, removing background, or resizing input image: {e}. Skipping this input.") # Updated error message
             continue # Skip to next input image
 
         # --- Generation and Verification Loop (Per Input) ---
