@@ -113,7 +113,7 @@ if __name__ == "__main__":
     # --- End Dynamic Loading ---
 
     # Instantiate using the dynamically loaded class
-    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype)
+    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
     pipeline.to(device)
 
     print("Initializing verifiers...")
