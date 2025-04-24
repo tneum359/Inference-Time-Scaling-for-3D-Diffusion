@@ -124,8 +124,12 @@ if __name__ == "__main__":
     print(f"Loading input image: {input_image_path_or_url}")
     try:
         input_image = load_image(input_image_path_or_url)
+        # Add resizing step
+        target_size = (256, 256)
+        print(f"Resizing input image to {target_size}...")
+        input_image = input_image.resize(target_size, Image.Resampling.LANCZOS) # Use LANCZOS for quality
     except Exception as e:
-        print(f"Error loading input image: {e}")
+        print(f"Error loading or resizing input image: {e}")
         exit(1)
 
     # --- Generation and Verification Loop ---
