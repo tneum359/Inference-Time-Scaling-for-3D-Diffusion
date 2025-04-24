@@ -1,5 +1,5 @@
 import torch
-from diffusers import StableZero123Pipeline
+from diffusers.pipelines.stable_diffusion.zero123 import Zero123Pipeline
 from PIL import Image
 import os
 import json
@@ -72,7 +72,7 @@ if __name__ == "__main__":
         exit(1)
 
     # Model and Pipeline
-    model_id = "stabilityai/stable-zero123"
+    model_id = "ashawkey/stable-zero123-diffusers"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     # --- Load Model & Verifiers ---
     print(f"Loading model: {model_id}")
-    pipeline = StableZero123Pipeline.from_pretrained(model_id, torch_dtype=dtype)
+    pipeline = Zero123Pipeline.from_pretrained(model_id, torch_dtype=dtype)
     pipeline.to(device)
 
     print("Initializing verifiers...")
