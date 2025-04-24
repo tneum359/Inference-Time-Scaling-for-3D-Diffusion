@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     # --- Load Model & Verifiers ---
     print(f"Loading model: {model_id}")
-    pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype)
+    pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
     pipeline.to(device)
 
     print("Initializing verifiers...")
