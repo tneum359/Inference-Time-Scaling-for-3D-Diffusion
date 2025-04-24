@@ -12,6 +12,9 @@ import requests
 from io import BytesIO
 import base64
 import typing
+import importlib.util
+import pathlib
+from huggingface_hub import snapshot_download
 
 from gemini_verifier import GeminiVerifier # Added
 from laion_aesthetics import LAIONAestheticVerifier
@@ -93,7 +96,24 @@ if __name__ == "__main__":
 
     # --- Load Model & Verifiers ---
     print(f"Loading model: {model_id}")
-    pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
+
+    # --- Dynamic Loading for Custom Pipeline ---
+    # 1. Get local cache path
+    cache_dir = snapshot_download(model_id)
+    # 2. Define path to the custom code file
+    custom_pipeline_file = pathlib.Path(cache_dir) / "clip_camera_projection" / "zero123.py"
+    # 3. Dynamically load the module
+    spec = importlib.util.spec_from_file_location("zero123_pipeline_module", custom_pipeline_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
+    zero123_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(zero123_module)
+    # 4. Get the pipeline class from the loaded module
+    PipelineClass = zero123_module.Zero123Pipeline
+    # --- End Dynamic Loading ---
+
+    # Instantiate using the dynamically loaded class
+    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
     pipeline.to(device)
 
     print("Initializing verifiers...")
