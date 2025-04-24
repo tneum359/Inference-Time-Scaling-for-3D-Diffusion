@@ -46,7 +46,6 @@ class GeminiVerifier(BaseVerifier):
     def __init__(self, seed=1994, model_name="gemini-2.0-flash", **kwargs):
         super().__init__(seed=seed, prompt_path=kwargs.pop("prompt_path", None))
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        # self.client = genai.Client(api_key=GEMINI_API_KEY)
         self.generation_config = types.GenerateContentConfig(
             system_instruction=self.verifier_prompt,
             response_mime_type="application/json",
