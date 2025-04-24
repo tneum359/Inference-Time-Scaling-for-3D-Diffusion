@@ -113,7 +113,7 @@ if __name__ == "__main__":
     # --- End Dynamic Loading ---
 
     # Instantiate using the dynamically loaded class
-    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
+    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype)
     pipeline.to(device)
 
     print("Initializing verifiers...")
@@ -144,20 +144,49 @@ if __name__ == "__main__":
         current_seed = random.randint(0, 2**32 - 1)
         generator = torch.Generator(device=device).manual_seed(current_seed)
 
-        # 1. Generate Multiview Images for this group
-        print(f"Generating multiview images with seed: {current_seed}...")
-        try:
-            generated_images = pipeline(
-                input_image,
-                num_inference_steps=28,
-                generator=generator
-            ).images
-            print(f"Generated {len(generated_images)} views.")
-        except Exception as e:
-            print(f"Error during image generation for group {i+1}: {e}")
-            continue # Skip to the next candidate group
+        # Define viewpoints
+        elevation_deg = 30.0
+        distance = 4.0 # Common distance value for zero123
+        azimuth_angles = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0]
+        generated_images = [] # Renamed from generated_images_for_group
 
-        # 2. Apply Gemini Verifier
+        print(f"Generating {len(azimuth_angles)} views with seed: {current_seed}...")
+        generation_successful = True
+        for view_idx, az in enumerate(azimuth_angles):
+            print(f"  Generating view {view_idx+1}/{len(azimuth_angles)} (Azimuth: {az:.1f})...")
+            try:
+                # 1. Generate SINGLE view image for this angle
+                result = pipeline(
+                    input_image, # Should be the single input PIL image
+                    num_inference_steps=28,
+                    generator=generator,
+                    elevation=elevation_deg,
+                    azimuth=az,
+                    distance=distance,
+                    height=256, # Explicitly set height/width if needed, default might be small
+                    width=256,
+                )
+                # Check if result has 'images' attribute and it's not empty
+                if hasattr(result, 'images') and result.images:
+                    generated_images.append(result.images[0])
+                else:
+                    print(f"  Warning: Pipeline result for view {view_idx+1} did not contain expected image output.")
+                    generation_successful = False
+                    break # Stop generating views for this group if one fails critically
+
+            except Exception as e:
+                print(f"  Error during image generation for view {view_idx+1}: {e}")
+                generation_successful = False
+                break # Stop generating views for this group if one fails
+
+        # Only proceed with verification if all views were generated
+        if not generation_successful or not generated_images:
+            print(f"Skipping verification for group {i+1} due to generation errors.")
+            continue
+
+        print(f"Generated {len(generated_images)} views successfully for group {i+1}.")
+
+        # 2. Apply Gemini Verifier (operates on the list of generated_images)
         print("Applying Gemini Verifier...")
         gemini_prompts = [prompt_text] * len(generated_images)
         try:
