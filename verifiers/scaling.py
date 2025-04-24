@@ -6,7 +6,6 @@ import json
 from datetime import datetime
 import numpy as np
 from dotenv import load_dotenv
-import argparse
 import random
 import requests
 from io import BytesIO
@@ -15,6 +14,7 @@ import typing
 import importlib.util
 import pathlib
 from huggingface_hub import snapshot_download
+import re # Added for sanitizing filenames
 
 from gemini_verifier import GeminiVerifier # Added
 from laion_aesthetics import LAIONAestheticVerifier
@@ -40,245 +40,248 @@ def convert_to_bytes(image: Image.Image, b64_encode=False) -> typing.Union[bytes
         return base64.b64encode(img_bytes).decode("utf-8")
     return img_bytes
 
-# --- Argument Parsing ---
-def parse_args():
-    parser = argparse.ArgumentParser(description="Generate and verify multiview images using StableZero123 and Gemini/LAION.")
-    parser.add_argument(
-        "--num-candidates",
-        type=int,
-        default=3,
-        help="Number of candidate multiview image groups to generate and evaluate."
-    )
-    parser.add_argument(
-        "--input-image",
-        type=str,
-        default="https://huggingface.co/datasets/sayakpaul/sample-datasets/resolve/main/flux-edit-artifacts/assets/car.jpg",
-        help="Path or URL to the input image for StableZero123."
-    )
-    parser.add_argument(
-        "--prompt",
-        type=str,
-        default="Photo of an athlete cat explaining its latest scandal at a press conference to journalists.",
-        help="Prompt to use for the Gemini verifier."
-    )
-    return parser.parse_args()
+# --- Helper function to create a safe directory name --- Added
+def get_input_name(path_or_url):
+    try:
+        if path_or_url.startswith('http://') or path_or_url.startswith('https://'):
+            # Use the last part of the path, remove query params, remove extension
+            name = os.path.splitext(path_or_url.split('?')[0].split('/')[-1])[0]
+        else:
+            # Use filename without extension
+            name = os.path.splitext(os.path.basename(path_or_url))[0]
+        # Sanitize
+        name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
+        # Handle empty names
+        return name if name else "default_input"
+    except Exception:
+        return "default_input" # Fallback
 
-# --- Main Script ---
+# --- Main Script --- Modified for Batch Processing
 if __name__ == "__main__":
-    args = parse_args()
+    # --- Static Configuration --- Define parameters here
+    input_images = [
+        "https://huggingface.co/datasets/sayakpaul/sample-datasets/resolve/main/flux-edit-artifacts/assets/car.jpg",
+        # Add more image paths or URLs here, e.g.:
+        # "path/to/your/local_image.png",
+        # "https://another.domain/image.jpeg"
+    ]
+    num_candidates = 3
+    prompt_text = "A high-quality 3D render of the object."
+    # --- End Static Configuration ---
 
-    # --- Configuration ---
+    # --- Configuration (Load Models/Verifiers ONCE outside the loop) ---
     # Load environment variables (for GEMINI_API_KEY)
     load_dotenv()
     if not os.getenv("GEMINI_API_KEY"):
         print("Error: GEMINI_API_KEY environment variable not set. Please create a .env file.")
         exit(1)
 
-    # Model and Pipeline
+    # Model and Pipeline Setup
     model_id = "ashawkey/stable-zero123-diffusers"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-
-    # Input Data from args
-    input_image_path_or_url = args.input_image
-    prompt_text = args.prompt
-    num_candidates = args.num_candidates
-
-    choice_of_metric_val = "average_overall_score" # Metric for selecting the best *group*
-
-    # Output Configuration (Modified Structure)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Construct path closer to the example format
-    run_output_dir = os.path.join("output", "stable-zero123", "gemini", "overall_score", timestamp)
-    # Create the base output directory if it doesn't exist
-    os.makedirs(os.path.dirname(run_output_dir), exist_ok=True)
-    # Don't create the final timestamped directory yet
-
-    # --- Load Model & Verifiers ---
     print(f"Loading model: {model_id}")
-
     # --- Dynamic Loading for Custom Pipeline ---
-    # 1. Get local cache path
     cache_dir = snapshot_download(model_id)
-    # 2. Define path to the custom code file
     custom_pipeline_file = pathlib.Path(cache_dir) / "clip_camera_projection" / "zero123.py"
-    # 3. Dynamically load the module
     spec = importlib.util.spec_from_file_location("zero123_pipeline_module", custom_pipeline_file)
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
     zero123_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(zero123_module)
-    # 4. Get the pipeline class from the loaded module
     PipelineClass = zero123_module.Zero123Pipeline
     # --- End Dynamic Loading ---
-
-    # Instantiate using the dynamically loaded class
     pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
     pipeline.to(device)
 
+    # Verifier Setup
     print("Initializing verifiers...")
     gemini_verifier = GeminiVerifier() # Requires GEMINI_API_KEY in .env
     laion_verifier = LAIONAestheticVerifier(dtype=dtype)
 
-    # --- Load Input Image ---
-    print(f"Loading input image: {input_image_path_or_url}")
-    try:
-        input_image = load_image(input_image_path_or_url)
-        # Add resizing step
-        target_size = (256, 256)
-        print(f"Resizing input image to {target_size}...")
-        input_image = input_image.resize(target_size, Image.Resampling.LANCZOS) # Use LANCZOS for quality
-    except Exception as e:
-        print(f"Error loading or resizing input image: {e}")
-        exit(1)
+    # --- Loop Over Input Images --- Added Outer Loop
+    for input_image_path_or_url in input_images:
+        print(f"\n{'='*20} Processing Input: {input_image_path_or_url} {'='*20}")
 
-    # --- Generation and Verification Loop ---
-    best_group_data = {
-        "avg_score": -1,
-        "images": None,
-        "gemini_scores": None,
-        "laion_scores": None,
-        "seed": -1
-    }
+        # --- Per-Input Configuration ---
+        input_name = get_input_name(input_image_path_or_url)
+        choice_of_metric_val = "average_overall_score"
 
-    print(f"Generating and evaluating {num_candidates} candidate groups...")
-    for i in range(num_candidates):
-        print(f"\n--- Candidate Group {i+1}/{num_candidates} ---")
-        # Use a unique seed for each candidate group generation
-        current_seed = random.randint(0, 2**32 - 1)
-        generator = torch.Generator(device=device).manual_seed(current_seed)
+        # Simplified Output Directory Structure
+        run_output_dir = os.path.join("output", input_name)
+        # Create the specific output directory for this input if it doesn't exist
+        # No timestamp needed here unless specifically desired for multiple runs on same input
+        os.makedirs(run_output_dir, exist_ok=True) # Create dir immediately
 
-        # Define viewpoints
-        elevation_deg = 30.0
-        distance = 4.0 # Common distance value for zero123
-        azimuth_angles = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0]
-        generated_images = [] # Renamed from generated_images_for_group
+        # --- Load Input Image --- (Moved inside loop)
+        print(f"Loading input image: {input_image_path_or_url}")
+        try:
+            input_image = load_image(input_image_path_or_url)
+            target_size = (256, 256)
+            print(f"Resizing input image to {target_size}...")
+            input_image = input_image.resize(target_size, Image.Resampling.LANCZOS)
+        except Exception as e:
+            print(f"Error loading or resizing input image: {e}. Skipping this input.")
+            continue # Skip to next input image
 
-        print(f"Generating {len(azimuth_angles)} views with seed: {current_seed}...")
-        generation_successful = True
-        for view_idx, az in enumerate(azimuth_angles):
-            print(f"  Generating view {view_idx+1}/{len(azimuth_angles)} (Azimuth: {az:.1f})...")
-            try:
-                # 1. Generate SINGLE view image for this angle
-                result = pipeline(
-                    input_image, # Should be the single input PIL image
-                    num_inference_steps=28,
-                    generator=generator,
-                    elevation=elevation_deg,
-                    azimuth=az,
-                    distance=distance,
-                    height=256, # Explicitly set height/width if needed, default might be small
-                    width=256,
-                )
-                # Check if result has 'images' attribute and it's not empty
-                if hasattr(result, 'images') and result.images:
-                    generated_images.append(result.images[0])
-                else:
-                    print(f"  Warning: Pipeline result for view {view_idx+1} did not contain expected image output.")
+        # --- Generation and Verification Loop (Per Input) ---
+        best_group_data = {
+            "avg_score": -1,
+            "images": None,
+            "gemini_scores": None,
+            "laion_scores": None,
+            "seed": -1
+        }
+
+        print(f"Generating and evaluating {num_candidates} candidate groups for {input_name}...")
+        for i in range(num_candidates):
+            print(f"\n--- Candidate Group {i+1}/{num_candidates} for {input_name} ---")
+            # Use a unique seed for each candidate group generation
+            current_seed = random.randint(0, 2**32 - 1)
+            generator = torch.Generator(device=device).manual_seed(current_seed)
+
+            # Define viewpoints
+            elevation_deg = 30.0
+            distance = 4.0 # Common distance value for zero123
+            azimuth_angles = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0]
+            generated_images = []
+
+            print(f"Generating {len(azimuth_angles)} views with seed: {current_seed}...")
+            generation_successful = True
+            for view_idx, az in enumerate(azimuth_angles):
+                print(f"  Generating view {view_idx+1}/{len(azimuth_angles)} (Azimuth: {az:.1f})...")
+                try:
+                    result = pipeline(
+                        input_image,
+                        num_inference_steps=28,
+                        generator=generator,
+                        elevation=elevation_deg,
+                        azimuth=az,
+                        distance=distance,
+                        height=256,
+                        width=256,
+                    )
+                    if hasattr(result, 'images') and result.images:
+                        generated_images.append(result.images[0])
+                    else:
+                        print(f"  Warning: Pipeline result for view {view_idx+1} did not contain expected image output.")
+                        generation_successful = False
+                        break
+                except Exception as e:
+                    print(f"  Error during image generation for view {view_idx+1}: {e}")
                     generation_successful = False
-                    break # Stop generating views for this group if one fails critically
+                    break
 
+            if not generation_successful or not generated_images:
+                print(f"Skipping verification for group {i+1} due to generation errors.")
+                continue
+
+            print(f"Generated {len(generated_images)} views successfully for group {i+1}.")
+
+            # 2. Apply Gemini Verifier
+            print("Applying Gemini Verifier...")
+            gemini_prompts = [prompt_text] * len(generated_images)
+            try:
+                gemini_inputs = gemini_verifier.prepare_inputs(images=generated_images, prompts=gemini_prompts)
+                gemini_results = gemini_verifier.score(inputs=gemini_inputs)
+                group_overall_scores = [res.get("overall_score", {}).get("score", 0) for res in gemini_results]
+                avg_group_score = np.mean(group_overall_scores) if group_overall_scores else 0
+                print(f"Gemini Average Overall Score for Group: {avg_group_score:.4f}")
             except Exception as e:
-                print(f"  Error during image generation for view {view_idx+1}: {e}")
-                generation_successful = False
-                break # Stop generating views for this group if one fails
+                print(f"Error during Gemini verification for group {i+1}: {e}")
+                avg_group_score = -1
+                gemini_results = []
 
-        # Only proceed with verification if all views were generated
-        if not generation_successful or not generated_images:
-            print(f"Skipping verification for group {i+1} due to generation errors.")
-            continue
+            # 3. Apply LAION Aesthetic Verifier
+            print("Applying LAION Aesthetic Verifier...")
+            try:
+                laion_inputs = laion_verifier.prepare_inputs(images=generated_images)
+                laion_results = laion_verifier.score(inputs=laion_inputs)
+                avg_laion_score = np.mean([res["laion_aesthetic_score"] for res in laion_results])
+                print(f"LAION Average Aesthetic Score for Group: {avg_laion_score:.4f}")
+            except Exception as e:
+                print(f"Error during LAION verification for group {i+1}: {e}")
+                laion_results = []
 
-        print(f"Generated {len(generated_images)} views successfully for group {i+1}.")
+            # 4. Check if this group is the best so far
+            if avg_group_score > best_group_data["avg_score"]:
+                print(f"New best group found for {input_name} with average Gemini score: {avg_group_score:.4f}")
+                best_group_data["avg_score"] = avg_group_score
+                best_group_data["images"] = generated_images
+                best_group_data["gemini_scores"] = gemini_results
+                best_group_data["laion_scores"] = laion_results
+                best_group_data["seed"] = current_seed
 
-        # 2. Apply Gemini Verifier (operates on the list of generated_images)
-        print("Applying Gemini Verifier...")
-        gemini_prompts = [prompt_text] * len(generated_images)
+        # --- Process and Save Best Group (Per Input) ---
+        if best_group_data["images"] is None:
+            print(f"\nNo successful candidate groups were generated or verified for input {input_name}.")
+            continue # Skip to the next input image
+
+        print(f"\n--- Best Group for {input_name} (Seed: {best_group_data['seed']}) --- ")
+        print(f"Average Gemini Overall Score: {best_group_data['avg_score']:.4f}")
+
+        # Save input image
+        input_img_save_path = os.path.join(run_output_dir, "input_image.png")
         try:
-            gemini_inputs = gemini_verifier.prepare_inputs(images=generated_images, prompts=gemini_prompts)
-            gemini_results = gemini_verifier.score(inputs=gemini_inputs) # List of dicts, one per image
-            # Calculate average overall score for the group
-            group_overall_scores = [res.get("overall_score", {}).get("score", 0) for res in gemini_results]
-            avg_group_score = np.mean(group_overall_scores) if group_overall_scores else 0
-            print(f"Gemini Average Overall Score for Group: {avg_group_score:.4f}")
+            input_image.save(input_img_save_path)
+            print(f"Saved input image to: {input_img_save_path}")
         except Exception as e:
-            print(f"Error during Gemini verification for group {i+1}: {e}")
-            avg_group_score = -1 # Penalize groups that fail verification
-            gemini_results = [] # Ensure it's an empty list
+            print(f"Error saving input image {input_img_save_path}: {e}")
 
-        # 3. Apply LAION Aesthetic Verifier (Optional, but kept for info)
-        print("Applying LAION Aesthetic Verifier...")
+        # Save generated images from the best group
+        saved_image_paths = []
+        best_gemini_scores = best_group_data["gemini_scores"]
+        for i, img in enumerate(best_group_data["images"]):
+            prompt_slug = "".join(c if c.isalnum() else '_' for c in prompt_text[:50])
+            img_score = best_gemini_scores[i].get('overall_score', {}).get('score', 'N/A') if best_gemini_scores else 'N/A'
+            img_score_str = f"{img_score:.1f}" if isinstance(img_score, (int, float)) else str(img_score)
+            img_filename = f"prompt@{prompt_slug}_s@{best_group_data['seed']}_i@{i}_score@{img_score_str}.png"
+            img_path = os.path.join(run_output_dir, img_filename)
+            try:
+                img.save(img_path)
+                relative_img_path = os.path.relpath(img_path, start=os.getcwd())
+                saved_image_paths.append(relative_img_path)
+            except Exception as e:
+                print(f"Error saving image {img_filename}: {e}")
+
+        print(f"Saved {len(saved_image_paths)} generated images to: {run_output_dir}")
+
+        # Calculate average LAION score for the best group (if available)
+        best_laion_scores = best_group_data["laion_scores"]
+        avg_laion_score_best_group = np.mean([res["laion_aesthetic_score"] for res in best_laion_scores]) if best_laion_scores else None
+
+        # --- Prepare Final Output JSON (Per Input) ---
+        # Extract representative Gemini explanation
+        gemini_explanation = "Explanation not available"
+        if best_gemini_scores and isinstance(best_gemini_scores, list) and len(best_gemini_scores) > 0:
+             first_image_scores = best_gemini_scores[0]
+             if isinstance(first_image_scores, dict):
+                 gemini_explanation = first_image_scores.get('overall_score', {}).get('explanation', gemini_explanation)
+
+        output_data = {
+            "input_identifier": input_name,
+            "input_source": input_image_path_or_url,
+            "prompt": prompt_text,
+            "best_score": {
+                "metric": "Average Gemini 'overall_score' across all views in the best group.",
+                "score": best_group_data["avg_score"],
+                "representative_explanation": gemini_explanation # Added explanation
+            },
+            "choice_of_metric": choice_of_metric_val,
+            "best_group_dir": os.path.relpath(run_output_dir, start=os.getcwd()),
+            "best_group_seed": best_group_data["seed"],
+            "best_group_avg_laion_score": avg_laion_score_best_group,
+            # Optional: Add paths to saved generated images if needed
+            # "saved_generated_image_paths": saved_image_paths
+        }
+
+        # --- Save Results JSON (Per Input) ---
+        results_filename = os.path.join(run_output_dir, "results.json")
         try:
-            laion_inputs = laion_verifier.prepare_inputs(images=generated_images)
-            laion_results = laion_verifier.score(inputs=laion_inputs)
-            avg_laion_score = np.mean([res["laion_aesthetic_score"] for res in laion_results])
-            print(f"LAION Average Aesthetic Score for Group: {avg_laion_score:.4f}")
+            with open(results_filename, "w") as f:
+                json.dump(output_data, f, indent=4)
+            print(f"Results JSON saved to: {results_filename}")
         except Exception as e:
-            print(f"Error during LAION verification for group {i+1}: {e}")
-            laion_results = [] # Ensure it's an empty list
+            print(f"Error saving results JSON: {e}")
 
-        # 4. Check if this group is the best so far
-        if avg_group_score > best_group_data["avg_score"]:
-            print(f"New best group found with average Gemini score: {avg_group_score:.4f}")
-            best_group_data["avg_score"] = avg_group_score
-            best_group_data["images"] = generated_images
-            best_group_data["gemini_scores"] = gemini_results
-            best_group_data["laion_scores"] = laion_results
-            best_group_data["seed"] = current_seed
-
-    # --- Process and Save Best Group --- 
-    if best_group_data["images"] is None:
-        print("\nNo successful candidate groups were generated or verified.")
-        exit(1)
-
-    print(f"\n--- Best Group (Seed: {best_group_data['seed']}) --- ")
-    print(f"Average Gemini Overall Score: {best_group_data['avg_score']:.4f}")
-
-    # Create the specific run directory for the best group now
-    os.makedirs(run_output_dir, exist_ok=True)
-
-    # Save images from the best group
-    saved_image_paths = []
-    best_gemini_scores = best_group_data["gemini_scores"]
-    for i, img in enumerate(best_group_data["images"]):
-        prompt_slug = "".join(c if c.isalnum() else '_' for c in prompt_text[:50])
-        img_score = best_gemini_scores[i].get('overall_score', {}).get('score', 'N/A') if best_gemini_scores else 'N/A'
-        img_score_str = f"{img_score:.1f}" if isinstance(img_score, (int, float)) else str(img_score)
-        # Adjusted filename: using seed (s) and view index (i)
-        img_filename = f"prompt@{prompt_slug}_s@{best_group_data['seed']}_i@{i}_score@{img_score_str}.png"
-        img_path = os.path.join(run_output_dir, img_filename)
-        try:
-            img.save(img_path)
-            relative_img_path = os.path.relpath(img_path, start=os.getcwd())
-            saved_image_paths.append(relative_img_path)
-        except Exception as e:
-            print(f"Error saving image {img_filename}: {e}")
-
-    print(f"Saved {len(saved_image_paths)} images from the best group to: {run_output_dir}")
-
-    # Calculate average LAION score for the best group (if available)
-    best_laion_scores = best_group_data["laion_scores"]
-    avg_laion_score_best_group = np.mean([res["laion_aesthetic_score"] for res in best_laion_scores]) if best_laion_scores else None
-
-    # --- Prepare Final Output (Using Group Average Score) --- 
-    output_data = {
-        "prompt": prompt_text,
-        "best_score": {
-            "explanation": "Average Gemini 'overall_score' across all views in the best group.",
-            "score": best_group_data["avg_score"] # Use the average score of the best group
-        },
-        # Metric used to determine the *best group*
-        "choice_of_metric": choice_of_metric_val, # Should be 'average_overall_score'
-        # Relative path to the directory containing all images of the best group
-        "best_group_dir": os.path.relpath(run_output_dir, start=os.getcwd())
-    }
-
-    # --- Save Results --- 
-    results_filename = os.path.join(run_output_dir, "results.json")
-    try:
-        with open(results_filename, "w") as f:
-            json.dump(output_data, f, indent=4)
-        print(f"Results JSON saved to: {results_filename}")
-    except Exception as e:
-        print(f"Error saving results JSON: {e}")
-
-    print("--- Script Finished ---")
+    print(f"\n{'='*20} Script Finished Processing All Inputs {'='*20}")
