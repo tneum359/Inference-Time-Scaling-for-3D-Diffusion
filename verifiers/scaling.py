@@ -158,6 +158,17 @@ if __name__ == "__main__":
             if rembg_session: # Only attempt if session initialized
                 print("Removing background...")
                 input_image = remove_background(input_image, rembg_session=rembg_session)
+
+                # <<< Convert RGBA back to RGB if needed >>>
+                if input_image.mode == 'RGBA':
+                    print("Converting RGBA background-removed image to RGB...")
+                    # Create a white background
+                    background = Image.new("RGB", input_image.size, (255, 255, 255))
+                    # Paste the RGBA image onto the white background using the alpha channel as mask
+                    background.paste(input_image, mask=input_image.split()[3])
+                    input_image = background
+                # <<< End RGBA to RGB conversion >>>
+
             else:
                 print("Skipping background removal due to session initialization error.")
             # <<< End background removal >>>
