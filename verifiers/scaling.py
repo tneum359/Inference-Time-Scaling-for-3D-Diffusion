@@ -1,5 +1,5 @@
 import torch
-from diffusers import DiffusionPipeline
+from diffusers import StableZero123Pipeline
 from PIL import Image
 import os
 import json
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     # --- Load Model & Verifiers ---
     print(f"Loading model: {model_id}")
-    pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype)
+    pipeline = StableZero123Pipeline.from_pretrained(model_id, torch_dtype=dtype)
     pipeline.to(device)
 
     print("Initializing verifiers...")
