@@ -110,31 +110,29 @@ if __name__ == "__main__":
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     print(f"Loading model: {model_id}")
 
-    # --- Re-introduce Dynamic Loading for Custom Pipeline ---
-    cache_dir = snapshot_download(model_id)
-    # Assuming the custom pipeline code is in pipeline_zero123plus.py at the root
-    custom_pipeline_file = pathlib.Path(cache_dir) / "pipeline_zero123plus.py"
-    spec = importlib.util.spec_from_file_location("zero123plus_pipeline_module", custom_pipeline_file)
-    if spec is None or spec.loader is None:
-        # If file not found, try listing .py files to help debug
-        try:
-            py_files = list(pathlib.Path(cache_dir).glob('*.py'))
-            print(f"Error: Could not load spec. Found .py files: {py_files}")
-        except Exception as list_e:
-            print(f"Error: Could not load spec and also failed to list .py files in {cache_dir}: {list_e}")
-        raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
-
-    zero123plus_module = importlib.util.module_from_spec(spec)
-    # import sys # Remove sys.modules hack
-    # sys.modules["diffusers"] = sys.modules[__name__.split('.')[0]]
-    spec.loader.exec_module(zero123plus_module)
-    # Get the pipeline class from the loaded module
-    PipelineClass = zero123plus_module.Zero123PlusPipeline # Get the correct class name
+    # --- Remove Dynamic Loading for Custom Pipeline ---
+    # cache_dir = snapshot_download(model_id)
+    # custom_pipeline_file = pathlib.Path(cache_dir) / "pipeline_zero123plus.py"
+    # spec = importlib.util.spec_from_file_location("zero123plus_pipeline_module", custom_pipeline_file)
+    # if spec is None or spec.loader is None:
+    #     try:
+    #         py_files = list(pathlib.Path(cache_dir).glob('*.py'))
+    #         print(f"Error: Could not load spec. Found .py files: {py_files}")
+    #     except Exception as list_e:
+    #         print(f"Error: Could not load spec and also failed to list .py files in {cache_dir}: {list_e}")
+    #     raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
+    # zero123plus_module = importlib.util.module_from_spec(spec)
+    # spec.loader.exec_module(zero123plus_module)
+    # PipelineClass = zero123plus_module.Zero123PlusPipeline
     # --- End Dynamic Loading ---
 
-    # Load pipeline using the dynamically loaded class
+    # Load pipeline using the recommended custom_pipeline argument
     # pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
-    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
+    pipeline = DiffusionPipeline.from_pretrained(
+        model_id,
+        custom_pipeline="sudo-ai/zero123plus-pipeline", # Specify the custom pipeline package
+        torch_dtype=dtype
+    )
     pipeline.to(device)
 
     # Verifier Setup
