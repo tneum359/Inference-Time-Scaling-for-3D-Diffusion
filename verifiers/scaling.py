@@ -87,7 +87,8 @@ def remove_background(
 if __name__ == "__main__":
     # --- Static Configuration --- Define parameters here
     input_images = [
-        "https://huggingface.co/datasets/sayakpaul/sample-datasets/resolve/main/flux-edit-artifacts/assets/car.jpg",
+        # "https://huggingface.co/datasets/sayakpaul/sample-datasets/resolve/main/flux-edit-artifacts/assets/car.jpg",
+        "verifiers/mesh_origin.png", # Use local file
         # Add more image paths or URLs here, e.g.:
         # "path/to/your/local_image.png",
         # "https://another.domain/image.jpeg"
