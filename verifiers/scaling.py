@@ -196,13 +196,16 @@ if __name__ == "__main__":
             current_seed = random.randint(0, 2**32 - 1)
             generator = torch.Generator(device=device).manual_seed(current_seed)
 
-            # Define viewpoints
-            elevation_deg = 30.0
+            # Define viewpoints - Experimenting with higher elevation and more views
+            # elevation_deg = 30.0
+            elevation_deg = 45.0 # Increased elevation
             distance = 4.0 # Common distance value for zero123
-            azimuth_angles = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0]
+            # azimuth_angles = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0]
+            num_views = 12 # Increased number of views
+            azimuth_angles = np.linspace(0, 360, num_views, endpoint=False).tolist() # Generate 12 evenly spaced angles
             generated_images = []
 
-            print(f"Generating {len(azimuth_angles)} views with seed: {current_seed}...")
+            print(f"Generating {len(azimuth_angles)} views with seed: {current_seed} (Elevation: {elevation_deg:.1f}, Distance: {distance:.1f})...")
             generation_successful = True
             for view_idx, az in enumerate(azimuth_angles):
                 print(f"  Generating view {view_idx+1}/{len(azimuth_angles)} (Azimuth: {az:.1f})...")
