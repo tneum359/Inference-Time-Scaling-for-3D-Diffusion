@@ -20,6 +20,7 @@ from typing import Any # Added
 
 from gemini_verifier import GeminiVerifier # Added
 from laion_aesthetics import LAIONAestheticVerifier
+from verifiers.camera_utils import get_circular_camera_poses # Added import
 
 # --- Helper Functions (Integrated from utils.py) ---
 def load_image(image_path_or_url):
@@ -103,21 +104,24 @@ if __name__ == "__main__":
         exit(1)
 
     # Model and Pipeline Setup
-    model_id = "ashawkey/stable-zero123-diffusers"
+    model_id = "sudo-ai/zero123plus-v1.2"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     print(f"Loading model: {model_id}")
-    # --- Dynamic Loading for Custom Pipeline ---
-    cache_dir = snapshot_download(model_id)
-    custom_pipeline_file = pathlib.Path(cache_dir) / "clip_camera_projection" / "zero123.py"
-    spec = importlib.util.spec_from_file_location("zero123_pipeline_module", custom_pipeline_file)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
-    zero123_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(zero123_module)
-    PipelineClass = zero123_module.Zero123Pipeline
+    # --- Remove Dynamic Loading for Custom Pipeline ---
+    # cache_dir = snapshot_download(model_id)
+    # custom_pipeline_file = pathlib.Path(cache_dir) / "clip_camera_projection" / "zero123.py"
+    # spec = importlib.util.spec_from_file_location("zero123_pipeline_module", custom_pipeline_file)
+    # if spec is None or spec.loader is None:
+    #     raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
+    # zero123_module = importlib.util.module_from_spec(spec)
+    # spec.loader.exec_module(zero123_module)
+    # PipelineClass = zero123_module.Zero123Pipeline
     # --- End Dynamic Loading ---
-    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
+
+    # Load pipeline using standard method, assuming custom code needed for Zero123-Plus
+    # pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
+    pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
     pipeline.to(device)
 
     # Verifier Setup
@@ -196,29 +200,32 @@ if __name__ == "__main__":
             current_seed = random.randint(0, 2**32 - 1)
             generator = torch.Generator(device=device).manual_seed(current_seed)
 
-            # Define viewpoints - Experimenting with higher elevation and more views
-            # elevation_deg = 30.0
-            elevation_deg = 45.0 # Increased elevation
-            distance = 4.0 # Common distance value for zero123
-            # azimuth_angles = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0]
-            num_views = 12 # Increased number of views
-            azimuth_angles = np.linspace(0, 360, num_views, endpoint=False).tolist() # Generate 12 evenly spaced angles
+            # Define viewpoints using camera poses from camera_utils
+            num_views = 12 # Keep 12 views
+            radius = 3.0 # Standard radius for Zero123-Plus
+            elevation = 20.0 # Standard elevation for Zero123-Plus
+            print(f"Generating camera poses for {num_views} views (Radius: {radius}, Elevation: {elevation})...")
+            # Get (num_views, 4, 4) camera-to-world matrices
+            camera_poses = get_circular_camera_poses(M=num_views, radius=radius, elevation=elevation)
+            camera_poses = camera_poses.to(device) # Move poses to the correct device
+
             generated_images = []
 
-            print(f"Generating {len(azimuth_angles)} views with seed: {current_seed} (Elevation: {elevation_deg:.1f}, Distance: {distance:.1f})...")
+            print(f"Generating {len(camera_poses)} views with seed: {current_seed}...")
             generation_successful = True
-            for view_idx, az in enumerate(azimuth_angles):
-                print(f"  Generating view {view_idx+1}/{len(azimuth_angles)} (Azimuth: {az:.1f})...")
+            # Loop through generated camera poses
+            for view_idx, pose in enumerate(camera_poses):
+                print(f"  Generating view {view_idx+1}/{len(camera_poses)}...")
                 try:
+                    # Generate SINGLE view image using the current pose matrix
                     result = pipeline(
-                        input_image,
+                        input_image, # Input is the background-removed, resized image
+                        pose=pose,   # Pass the 4x4 pose matrix
                         num_inference_steps=28,
                         generator=generator,
-                        elevation=elevation_deg,
-                        azimuth=az,
-                        distance=distance,
-                        height=256,
-                        width=256,
+                        height=320, # Zero123-Plus often uses 320x320
+                        width=320,
+                        # Remove elevation, azimuth, distance
                     )
                     if hasattr(result, 'images') and result.images:
                         generated_images.append(result.images[0])
