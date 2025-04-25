@@ -110,25 +110,24 @@ if __name__ == "__main__":
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     print(f"Loading model: {model_id}")
 
-    # --- Dynamic Loading for Custom Pipeline (Re-added for Zero123-Plus) ---
-    cache_dir = snapshot_download(model_id)
-    # Assuming the custom pipeline code is in pipeline_zero123plus.py at the root
-    custom_pipeline_file = pathlib.Path(cache_dir) / "pipeline_zero123plus.py"
-    spec = importlib.util.spec_from_file_location("zero123plus_pipeline_module", custom_pipeline_file)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
-    zero123plus_module = importlib.util.module_from_spec(spec)
-    # Need to make diffusers findable for the module to import from it
-    import sys
-    sys.modules["diffusers"] = sys.modules[__name__.split('.')[0]] # Hacky way if needed
-    spec.loader.exec_module(zero123plus_module)
-    # Get the pipeline class from the loaded module
-    PipelineClass = zero123plus_module.Zero123PlusPipeline # Get the correct class name
+    # --- Remove Dynamic Loading for Custom Pipeline (Re-added for Zero123-Plus) ---
+    # cache_dir = snapshot_download(model_id)
+    # # Assuming the custom pipeline code is in pipeline_zero123plus.py at the root
+    # custom_pipeline_file = pathlib.Path(cache_dir) / "pipeline_zero123plus.py"
+    # spec = importlib.util.spec_from_file_location("zero123plus_pipeline_module", custom_pipeline_file)
+    # if spec is None or spec.loader is None:
+    #     raise ImportError(f"Could not load spec for module from {custom_pipeline_file}")
+    # zero123plus_module = importlib.util.module_from_spec(spec)
+    # # Need to make diffusers findable for the module to import from it
+    # import sys
+    # sys.modules["diffusers"] = sys.modules[__name__.split('.')[0]] # Hacky way if needed
+    # spec.loader.exec_module(zero123plus_module)
+    # # Get the pipeline class from the loaded module
+    # PipelineClass = zero123plus_module.Zero123PlusPipeline # Get the correct class name
     # --- End Dynamic Loading ---
 
-    # Load pipeline using the dynamically loaded class
-    # pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
-    pipeline = PipelineClass.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
+    # Load pipeline using standard method with trust_remote_code
+    pipeline = DiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype, trust_remote_code=True)
     pipeline.to(device)
 
     # Verifier Setup
