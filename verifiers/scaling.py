@@ -212,7 +212,7 @@ if __name__ == "__main__":
             generator = torch.Generator(device=device).manual_seed(current_seed)
 
             # Define viewpoints using camera poses from camera_utils
-            num_views = 12 # Keep 12 views
+            num_views = 6 # Keep 12 views
             radius = 3.0 # Standard radius for Zero123-Plus
             elevation = 20.0 # Standard elevation for Zero123-Plus
             print(f"Generating camera poses for {num_views} views (Radius: {radius}, Elevation: {elevation})...")
