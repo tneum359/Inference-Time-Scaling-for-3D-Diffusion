@@ -25,26 +25,27 @@ For each aspect, provide:
 
 Then provide an overall assessment of the multiview set's potential for 3D reconstruction.
 
-Format your response as a JSON object with the following structure:
+You must respond with a valid JSON object in exactly this format:
 {
     "aesthetic_quality": {
-        "score": <0-10>,
-        "explanation": "<your explanation>"
+        "score": 8,
+        "explanation": "High quality details and realistic lighting"
     },
     "visual_consistency": {
-        "score": <0-10>,
-        "explanation": "<your explanation>"
+        "score": 7,
+        "explanation": "Good shape consistency but some texture variations"
     },
     "reconstruction_potential": {
-        "score": <0-10>,
-        "explanation": "<your explanation>"
+        "score": 9,
+        "explanation": "Excellent coverage and clear depth cues"
     },
-    "overall_score": <average of the three scores>,
-    "overall_assessment": "<your overall assessment>"
+    "overall_score": 8,
+    "overall_assessment": "Strong potential for high-quality 3D reconstruction"
 }
 
-Remember to:
-1. Return ONLY the JSON object
-2. Do not include any additional text or explanations
-3. Ensure all scores are numbers between 0 and 10
-4. Make sure the JSON is properly formatted and valid
+IMPORTANT:
+1. Return ONLY the JSON object, no other text
+2. Use numbers (not strings) for scores
+3. Keep explanations concise
+4. Ensure the JSON is valid and properly formatted
+5. Calculate overall_score as the average of the three aspect scores

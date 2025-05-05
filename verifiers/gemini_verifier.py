@@ -143,6 +143,8 @@ class GeminiVerifier(BaseVerifier):
                 }
                 
             except Exception as e:
+                print(f"Error parsing response: {str(e)}")
+                print(f"Raw response: {response_text}")
                 return {
                     "success": False,
                     "error": f"Failed to parse response: {str(e)}",
@@ -150,6 +152,7 @@ class GeminiVerifier(BaseVerifier):
                 }
                 
         except Exception as e:
+            print(f"Error during Gemini evaluation: {str(e)}")
             return {
                 "success": False,
                 "error": f"Error during Gemini evaluation: {str(e)}"
