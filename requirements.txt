@@ -5,10 +5,12 @@ google-generativeai
 typing-extensions
 Pillow
 transformers
-huggingface-hub
-diffusers
+huggingface-hub==0.19.4
+diffusers==0.24.0
 python-dotenv
 requests 
 rembg
 onnxruntime
 pytorch-lightning
+xatlas
+accelerate==0.25.0
