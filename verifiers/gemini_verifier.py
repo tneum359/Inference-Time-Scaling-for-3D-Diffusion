@@ -4,9 +4,11 @@ import typing_extensions as typing
 import json
 import os
 import sys
-from typing import Union
+from typing import Union, List, Dict, Any
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import base64
+from io import BytesIO
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, ".."))
@@ -55,43 +57,95 @@ class GeminiVerifier(BaseVerifier):
         )
         self.model_name = model_name
 
-    def prepare_inputs(self, images: Union[list[Image.Image], Image.Image], prompts: Union[list[str], str], **kwargs):
-        """Prepare inputs for the API from a given prompt and image."""
-        inputs = []
-        images = images if isinstance(images, list) else [images]
-        prompts = prompts if isinstance(prompts, list) else [prompts]
-        for prompt, image in zip(prompts, images):
-            part = [
-                types.Part.from_text(text=prompt),
-                types.Part.from_bytes(data=convert_to_bytes(image), mime_type="image/png"),
-            ]
-            inputs.extend(part)
+    def prepare_inputs(self, images: List[Image.Image], prompts: List[str]) -> Dict[str, Any]:
+        """
+        Prepare inputs for the Gemini model.
+        
+        Args:
+            images: List of PIL Images (should be 6 multiview images)
+            prompts: List of prompts (should be the same prompt repeated 6 times)
+            
+        Returns:
+            Dictionary containing the prepared inputs
+        """
+        if len(images) != 6:
+            raise ValueError("Expected exactly 6 multiview images")
+            
+        # Convert images to base64
+        image_parts = []
+        for img in images:
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            image_parts.append({
+                "mime_type": "image/png",
+                "data": img_str
+            })
+            
+        return {
+            "images": image_parts,
+            "prompt": self.verifier_prompt
+        }
 
-        return inputs
-
-    def score(self, inputs, **kwargs) -> list[dict[str, float]]:
-        # Group the flat list into consecutive chunks of 2.
-        def call_generate_content(parts):
-            content = types.Content(parts=parts, role="user")
+    def score(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Score the multiview images using Gemini.
+        
+        Args:
+            inputs: Dictionary containing images and prompt
+            
+        Returns:
+            Dictionary containing the evaluation results
+        """
+        try:
+            # Create the content parts for the model
+            content_parts = []
+            
+            # Add the prompt
+            content_parts.append(self.verifier_prompt)
+            
+            # Add the images
+            for img_part in inputs["images"]:
+                content_parts.append({
+                    "mime_type": img_part["mime_type"],
+                    "data": img_part["data"]
+                })
+            
+            # Generate response
             response = self.client.models.generate_content(
-                model=self.model_name, contents=content, config=self.generation_config
+                model=self.model_name, contents=content_parts, config=self.generation_config
             )
-            return response.parsed[0]
-
-        grouped_inputs = [inputs[i : i + 2] for i in range(0, len(inputs), 2)]
-        results = []
-        max_workers = len(grouped_inputs)
-        if max_workers > 4:
-            max_workers = 4
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(call_generate_content, group) for group in grouped_inputs]
-            for future in as_completed(futures):
-                try:
-                    results.append(future.result())
-                except Exception as e:
-                    # Handle exceptions as appropriate.
-                    print(f"An error occurred during API call: {e}")
-        return results
+            
+            # Parse the response
+            try:
+                # Extract JSON from the response
+                response_text = response.text
+                # Find the JSON object in the response
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_str = response_text[json_start:json_end]
+                    result = json.loads(json_str)
+                else:
+                    raise ValueError("No JSON object found in response")
+                
+                return {
+                    "success": True,
+                    "result": result,
+                    "raw_response": response_text
+                }
+            except json.JSONDecodeError as e:
+                return {
+                    "success": False,
+                    "error": f"Failed to parse JSON response: {str(e)}",
+                    "raw_response": response.text
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Error during Gemini evaluation: {str(e)}"
+            }
 
 
 # Define inputs
