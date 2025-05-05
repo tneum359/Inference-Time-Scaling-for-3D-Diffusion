@@ -73,19 +73,27 @@ class GeminiVerifier(BaseVerifier):
             # Create the content parts for the model
             content_parts = []
             
-            # Add the prompt
-            content_parts.append(self.verifier_prompt)
+            # Add the prompt as text
+            content_parts.append(types.Content(
+                parts=[types.Part(text=self.verifier_prompt)]
+            ))
             
             # Add the images
             for img_part in inputs["images"]:
-                content_parts.append({
-                    "mime_type": img_part["mime_type"],
-                    "data": img_part["data"]
-                })
+                content_parts.append(types.Content(
+                    parts=[types.Part(
+                        inline_data=types.Blob(
+                            mime_type=img_part["mime_type"],
+                            data=img_part["data"]
+                        )
+                    )]
+                ))
             
             # Generate response
             response = self.client.models.generate_content(
-                model=self.model_name, contents=content_parts, config=self.generation_config
+                model=self.model_name,
+                contents=content_parts,
+                config=self.generation_config
             )
             
             # Parse the response
