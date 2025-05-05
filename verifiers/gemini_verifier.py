@@ -102,6 +102,7 @@ class GeminiVerifier(BaseVerifier):
             try:
                 # Get the response text
                 response_text = response.text
+                print(f"Raw response from Gemini: {response_text}")  # Debug print
                 
                 # Try to parse as JSON directly first
                 try:
@@ -165,5 +166,6 @@ class GeminiVerifier(BaseVerifier):
             print(f"Error during Gemini evaluation: {str(e)}")
             return {
                 "success": False,
-                "error": f"Error during Gemini evaluation: {str(e)}"
+                "error": f"Error during Gemini evaluation: {str(e)}",
+                "raw_response": None
             }
