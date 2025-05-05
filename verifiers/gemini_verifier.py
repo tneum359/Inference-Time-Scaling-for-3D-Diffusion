@@ -73,14 +73,16 @@ class GeminiVerifier(BaseVerifier):
             # Create the content parts for the model
             content_parts = []
             
-            # Add the prompt as text
+            # Add the prompt as text with user role
             content_parts.append(types.Content(
+                role="user",
                 parts=[types.Part(text=self.verifier_prompt)]
             ))
             
-            # Add the images
+            # Add the images with user role
             for img_part in inputs["images"]:
                 content_parts.append(types.Content(
+                    role="user",
                     parts=[types.Part(
                         inline_data=types.Blob(
                             mime_type=img_part["mime_type"],
