@@ -118,27 +118,53 @@ class GeminiVerifier(BaseVerifier):
             
             # Parse the response
             try:
-                # Extract JSON from the response
+                # Get the response text
                 response_text = response.text
-                # Find the JSON object in the response
-                json_start = response_text.find('{')
-                json_end = response_text.rfind('}') + 1
-                if json_start >= 0 and json_end > json_start:
-                    json_str = response_text[json_start:json_end]
-                    result = json.loads(json_str)
-                else:
-                    raise ValueError("No JSON object found in response")
+                
+                # Try to parse as JSON directly first
+                try:
+                    result = json.loads(response_text)
+                except json.JSONDecodeError:
+                    # If direct parsing fails, try to extract JSON from the text
+                    json_start = response_text.find('{')
+                    json_end = response_text.rfind('}') + 1
+                    if json_start >= 0 and json_end > json_start:
+                        json_str = response_text[json_start:json_end]
+                        result = json.loads(json_str)
+                    else:
+                        raise ValueError("No valid JSON found in response")
+                
+                # Ensure the result has the expected structure
+                if not isinstance(result, dict):
+                    raise ValueError("Response is not a dictionary")
+                
+                # Add default scores if missing
+                default_scores = {
+                    "aesthetic_quality": {"score": 0, "explanation": "No score provided"},
+                    "visual_consistency": {"score": 0, "explanation": "No score provided"},
+                    "reconstruction_potential": {"score": 0, "explanation": "No score provided"},
+                    "overall_assessment": "No assessment provided"
+                }
+                
+                # Update with actual scores if present
+                for key in default_scores:
+                    if key in result:
+                        if isinstance(result[key], dict):
+                            default_scores[key].update(result[key])
+                        else:
+                            default_scores[key] = result[key]
                 
                 return {
                     "success": True,
-                    "result": result,
+                    "result": default_scores,
                     "raw_response": response_text
                 }
-            except json.JSONDecodeError as e:
+                
+            except Exception as e:
                 return {
                     "success": False,
-                    "error": f"Failed to parse JSON response: {str(e)}",
-                    "raw_response": response.text
+                    "error": f"Failed to parse response: {str(e)}",
+                    "raw_response": response_text
                 }
                 
         except Exception as e:
