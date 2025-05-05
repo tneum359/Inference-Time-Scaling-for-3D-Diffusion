@@ -1,12 +1,10 @@
 from google import genai
 from google.genai import types
-import typing_extensions as typing
 import json
 import os
 import sys
-from typing import Union, List, Dict, Any
+from typing import List, Dict, Any
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import base64
 from io import BytesIO
 
@@ -16,42 +14,16 @@ root_dir = os.path.abspath(os.path.join(current_dir, ".."))
 sys.path.insert(0, current_dir)
 sys.path.insert(0, root_dir)
 
-
 from verifiers.base_verifier import BaseVerifier
-from utils import convert_to_bytes
-
-
-class Score(typing.TypedDict):
-    explanation: str
-    score: float
-
-
-class Grading(typing.TypedDict):
-    accuracy_to_prompt: Score
-    creativity_and_originality: Score
-    visual_quality_and_realism: Score
-    consistency_and_cohesion: Score
-    emotional_or_thematic_resonance: Score
-    overall_score: Score
 
 
 class GeminiVerifier(BaseVerifier):
-    SUPPORTED_METRIC_CHOICES = [
-        "accuracy_to_prompt",
-        "creativity_and_originality",
-        "visual_quality_and_realism",
-        "consistency_and_cohesion",
-        "emotional_or_thematic_resonance",
-        "overall_score",
-    ]
-
     def __init__(self, seed=1994, model_name="gemini-2.0-flash", **kwargs):
         super().__init__(seed=seed, prompt_path=kwargs.pop("prompt_path", None))
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.generation_config = types.GenerateContentConfig(
             system_instruction=self.verifier_prompt,
             response_mime_type="application/json",
-            response_schema=list[Grading],
             max_output_tokens=kwargs.pop("max_new_tokens", None),
             seed=seed,
         )
@@ -143,6 +115,7 @@ class GeminiVerifier(BaseVerifier):
                     "aesthetic_quality": {"score": 0, "explanation": "No score provided"},
                     "visual_consistency": {"score": 0, "explanation": "No score provided"},
                     "reconstruction_potential": {"score": 0, "explanation": "No score provided"},
+                    "overall_score": 0,
                     "overall_assessment": "No assessment provided"
                 }
                 
@@ -153,6 +126,15 @@ class GeminiVerifier(BaseVerifier):
                             default_scores[key].update(result[key])
                         else:
                             default_scores[key] = result[key]
+                
+                # Calculate overall score if not provided
+                if default_scores["overall_score"] == 0:
+                    scores = [
+                        default_scores["aesthetic_quality"]["score"],
+                        default_scores["visual_consistency"]["score"],
+                        default_scores["reconstruction_potential"]["score"]
+                    ]
+                    default_scores["overall_score"] = sum(scores) / len(scores)
                 
                 return {
                     "success": True,
@@ -172,41 +154,3 @@ class GeminiVerifier(BaseVerifier):
                 "success": False,
                 "error": f"Error during Gemini evaluation: {str(e)}"
             }
-
-
-# Define inputs
-if __name__ == "__main__":
-    verifier = GeminiVerifier()
-    image_urls = [
-        (
-            "realistic photo a shiny black SUV car with a mountain in the background.",
-            "https://huggingface.co/datasets/sayakpaul/sample-datasets/resolve/main/flux-edit-artifacts/assets/car.jpg",
-        ),
-        (
-            "photo a green and funny creature standing in front a lightweight forest.",
-            "https://huggingface.co/datasets/sayakpaul/sample-datasets/resolve/main/flux-edit-artifacts/assets/green_creature.jpg",
-        ),
-    ]
-
-    prompts = []
-    images = []
-    for text, path_or_url in image_urls:
-        prompts.append(text)
-        images.append(path_or_url)
-
-    # # Single image
-    # response = client.models.generate_content(
-    #     model='gemini-2.0-flash',
-    #     contents=[
-    #         "realistic photo a shiny black SUV car with a mountain in the background.",
-    #         load_image("https://huggingface.co/datasets/sayakpaul/sample-datasets/resolve/main/flux-edit-artifacts/assets/car.jpg")
-    #     ],
-    #     config=generation_config
-    # )
-    inputs = verifier.prepare_inputs(images=images, prompts=prompts)
-    response = verifier.score(inputs)
-
-    with open("results.json", "w") as f:
-        json.dump(response, f)
-
-    print(json.dumps(response, indent=4))
