@@ -18,7 +18,7 @@ sys.path.insert(0, root_dir)
 from verifiers.base_verifier import BaseVerifier
 
 class GeminiVerifier(BaseVerifier):
-    def __init__(self, seed=1994, model_name="gemini-1.5-pro-vision", **kwargs):
+    def __init__(self, seed=1994, model_name="gemini-1.5-pro", **kwargs):
         # Extract gemini_prompt before calling super().__init__
         self.verifier_prompt = kwargs.pop('gemini_prompt', "No prompt provided.")
         
