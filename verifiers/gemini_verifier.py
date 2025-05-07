@@ -20,7 +20,12 @@ from verifiers.base_verifier import BaseVerifier
 
 class GeminiVerifier(BaseVerifier):
     def __init__(self, seed=1994, model_name="gemini-1.5-flash", **kwargs):
+        # Extract gemini_prompt before calling super().__init__
+        self.verifier_prompt = kwargs.pop('gemini_prompt', "No prompt provided.")
+        
+        # Now call super() with the remaining kwargs (without gemini_prompt)
         super().__init__(seed=seed, **kwargs)
+        
         self.api_key = os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable not set.")
@@ -37,7 +42,6 @@ class GeminiVerifier(BaseVerifier):
             # top_k=40,
             response_mime_type="application/json", # Request JSON output directly
         )
-        self.verifier_prompt = kwargs.get('gemini_prompt', "No prompt provided.")
         print(f"GeminiVerifier initialized with model: {model_name}")
         # print(f"Using prompt: {self.verifier_prompt[:100]}...") # Print start of prompt
 
