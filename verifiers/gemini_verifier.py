@@ -18,7 +18,7 @@ sys.path.insert(0, root_dir)
 from verifiers.base_verifier import BaseVerifier
 
 class GeminiVerifier(BaseVerifier):
-    def __init__(self, seed=1994, model_name="gemini-1.5-pro-vision-latest", **kwargs):
+    def __init__(self, seed=1994, model_name="gemini-pro-vision", **kwargs):
         # Extract gemini_prompt before calling super().__init__
         self.verifier_prompt = kwargs.pop('gemini_prompt', "No prompt provided.")
         
@@ -63,10 +63,8 @@ class GeminiVerifier(BaseVerifier):
             try:
                 original_img_bytes = base64.b64decode(inputs["original_image_b64"])
                 content_parts.append({
-                    "inline_data": {
-                        "mime_type": "image/png",
-                        "data": original_img_bytes
-                    }
+                    "mime_type": "image/png",
+                    "data": original_img_bytes
                 })
             except Exception as e:
                 print(f"Error processing original image: {e}")
@@ -78,10 +76,8 @@ class GeminiVerifier(BaseVerifier):
                 try:
                     view_bytes = base64.b64decode(view_b64_data)
                     content_parts.append({
-                        "inline_data": {
-                            "mime_type": "image/png",
-                            "data": view_bytes
-                        }
+                        "mime_type": "image/png",
+                        "data": view_bytes
                     })
                 except Exception as e:
                     print(f"Error processing candidate view {i}: {e}")
