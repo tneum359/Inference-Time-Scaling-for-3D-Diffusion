@@ -52,38 +52,69 @@ class GeminiVerifier(BaseVerifier):
                 print("Error: Missing original_image_b64 or candidate_views_b64 in inputs to score method.")
                 return {"success": False, "error": "Missing image data in inputs.", "raw_response": None}
 
+            # Debug: Print input image details
+            print("\n=== Debug: Input Image Details ===")
+            print(f"Original image base64 length: {len(inputs['original_image_b64'])}")
+            print(f"Number of candidate views: {len(inputs['candidate_views_b64'])}")
+            
             # Create the content parts for the API call
             content_parts = []
             
             # Add the main prompt
-            content_parts.append({"text": self.verifier_prompt})
+            content_parts.append(self.verifier_prompt)
+            print(f"\nPrompt length: {len(self.verifier_prompt)}")
             
             # Add marker and original image
-            content_parts.append({"text": "\n\n--- Initial Input Image ---"})
+            content_parts.append("\n\n--- Initial Input Image ---")
             try:
                 original_img_bytes = base64.b64decode(inputs["original_image_b64"])
+                print(f"Original image bytes length: {len(original_img_bytes)}")
+                
+                # Debug: Save the decoded image to verify it's valid
+                debug_img = Image.open(BytesIO(original_img_bytes))
+                print(f"Original image dimensions: {debug_img.size}")
+                
                 content_parts.append({
-                    "mime_type": "image/png",
-                    "data": original_img_bytes
+                    "inline_data": {
+                        "mime_type": "image/png",
+                        "data": original_img_bytes
+                    }
                 })
             except Exception as e:
                 print(f"Error processing original image: {e}")
+                traceback.print_exc()
                 return {"success": False, "error": f"Failed to process original image: {e}", "raw_response": None}
             
             # Add marker and candidate views
-            content_parts.append({"text": "\n\n--- Candidate Multiview Set ---"})
+            content_parts.append("\n\n--- Candidate Multiview Set ---")
             for i, view_b64_data in enumerate(inputs["candidate_views_b64"]):
                 try:
                     view_bytes = base64.b64decode(view_b64_data)
+                    print(f"Candidate view {i} bytes length: {len(view_bytes)}")
+                    
+                    # Debug: Save the decoded image to verify it's valid
+                    debug_img = Image.open(BytesIO(view_bytes))
+                    print(f"Candidate view {i} dimensions: {debug_img.size}")
+                    
                     content_parts.append({
-                        "mime_type": "image/png",
-                        "data": view_bytes
+                        "inline_data": {
+                            "mime_type": "image/png",
+                            "data": view_bytes
+                        }
                     })
                 except Exception as e:
                     print(f"Error processing candidate view {i}: {e}")
+                    traceback.print_exc()
                     return {"success": False, "error": f"Failed to process candidate view {i}: {e}", "raw_response": None}
 
-            print(f"Sending request to Gemini ({self.model_name})... Content parts: {len(content_parts)}")
+            print(f"\nSending request to Gemini ({self.model_name})...")
+            print(f"Total content parts: {len(content_parts)}")
+            print("Content parts structure:")
+            for i, part in enumerate(content_parts):
+                if isinstance(part, str):
+                    print(f"Part {i}: Text (length: {len(part)})")
+                elif isinstance(part, dict) and "inline_data" in part:
+                    print(f"Part {i}: Image (bytes: {len(part['inline_data']['data'])})")
             
             # Generate response
             try:
@@ -95,7 +126,7 @@ class GeminiVerifier(BaseVerifier):
                 # Parse the response
                 try:
                     response_text = response.text
-                    print(f"Raw response from Gemini: {response_text[:500]}...")
+                    print(f"\nRaw response from Gemini: {response_text[:500]}...")
                     
                     # Try to parse as JSON
                     try:
