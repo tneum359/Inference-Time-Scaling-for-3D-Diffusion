@@ -35,7 +35,7 @@ class GeminiVerifier(BaseVerifier):
         # Set up the model
         self.model = genai.GenerativeModel(model_name)
         self.model_name = model_name
-        
+
         # Configure generation parameters
         self.generation_config = {
             "temperature": 0.7,
